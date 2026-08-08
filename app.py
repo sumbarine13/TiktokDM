@@ -46,7 +46,7 @@ current_follow_delay = float(os.environ.get("FOLLOW_DELAY", 4.0))
 current_dm_delay = float(os.environ.get("DM_DELAY", 6.0))
 
 # -----------------------------------------------------------
-# Active background tasks (mass follow / follow+dm)
+# Active background tasks
 # -----------------------------------------------------------
 active_tasks: Dict[str, Dict] = {}
 
@@ -55,7 +55,6 @@ active_tasks: Dict[str, Dict] = {}
 # -----------------------------------------------------------
 def load_cookies() -> Optional[Dict[str, Any]]:
     """Load TikTok cookies from environment variable or cookies.json file."""
-    # 1. Environment variable (base64 or raw JSON)
     env_cookies = os.environ.get("TIKTOK_COOKIES_JSON")
     if env_cookies:
         try:
@@ -68,7 +67,6 @@ def load_cookies() -> Optional[Dict[str, Any]]:
             except json.JSONDecodeError:
                 pass
 
-    # 2. Local cookies.json file
     cookie_file = Path("cookies.json")
     if cookie_file.exists():
         with open(cookie_file) as f:
@@ -111,7 +109,7 @@ async def send_dm(api, target_username: str, message: str):
     await api.dm().send_message(conversation_id=conversation_id, text=message)
 
 # -----------------------------------------------------------
-# Background tasks
+# Background tasks (same as yours – kept unchanged)
 # -----------------------------------------------------------
 async def mass_follow_followers(target_username: str, limit: int, task_id: str = None):
     """Follow followers of target_username."""
@@ -153,7 +151,6 @@ async def mass_follow_followers(target_username: str, limit: int, task_id: str =
         if task_id and task_id in active_tasks:
             del active_tasks[task_id]
 
-
 async def mass_follow_and_dm(target_username: str, dm_message: str, limit: int, task_id: str = None):
     """Follow then DM each follower of target_username."""
     cookies = load_cookies()
@@ -190,7 +187,7 @@ async def mass_follow_and_dm(target_username: str, dm_message: str, limit: int, 
                     fail_follow += 1
                     if "ActionBlocked" in str(e):
                         return True, f"Blocked. Followed {success_follow}, DM'd {success_dm}."
-                    continue  # skip DM if follow completely failed
+                    continue
 
             # 2. DM
             try:
@@ -210,9 +207,8 @@ async def mass_follow_and_dm(target_username: str, dm_message: str, limit: int, 
         if task_id and task_id in active_tasks:
             del active_tasks[task_id]
 
-
 # -----------------------------------------------------------
-# Flask routes
+# Flask routes (unchanged)
 # -----------------------------------------------------------
 @app.route('/')
 def index():
@@ -223,7 +219,6 @@ def api_status():
     cookies = load_cookies()
     return jsonify({"authenticated": cookies is not None})
 
-# Send single DM
 @app.route('/api/send', methods=['POST'])
 def api_send():
     if not rate_limiter.allow():
@@ -252,7 +247,6 @@ def api_send():
     finally:
         loop.close()
 
-# Follow a user
 @app.route('/api/follow', methods=['POST'])
 def api_follow():
     if not rate_limiter.allow():
@@ -279,7 +273,6 @@ def api_follow():
     finally:
         loop.close()
 
-# Start mass follow task
 @app.route('/api/mass_follow', methods=['POST'])
 def api_mass_follow():
     if not rate_limiter.allow():
@@ -303,7 +296,6 @@ def api_mass_follow():
     threading.Thread(target=run_task).start()
     return jsonify({"success": True, "task_id": task_id, "message": f"Mass follow started for @{target}."})
 
-# Start follow+DM loop task
 @app.route('/api/mass_follow_dm', methods=['POST'])
 def api_mass_follow_dm():
     if not rate_limiter.allow():
@@ -328,7 +320,6 @@ def api_mass_follow_dm():
     threading.Thread(target=run_task).start()
     return jsonify({"success": True, "task_id": task_id, "message": f"Follow+DM loop started for @{target}."})
 
-# Check task status
 @app.route('/api/task_status/<task_id>')
 def task_status(task_id):
     task = active_tasks.get(task_id)
@@ -338,7 +329,6 @@ def task_status(task_id):
         return jsonify({"success": True, "completed": True, **task["result"]})
     return jsonify({"success": True, "completed": False, "message": "Still running..."})
 
-# Cancel a task
 @app.route('/api/cancel_task/<task_id>', methods=['POST'])
 def cancel_task(task_id):
     task = active_tasks.get(task_id)
@@ -347,7 +337,6 @@ def cancel_task(task_id):
     task["cancel"] = True
     return jsonify({"success": True, "message": "Cancellation requested."})
 
-# Update delays
 @app.route('/api/set_delays', methods=['POST'])
 def set_delays():
     global current_follow_delay, current_dm_delay
@@ -375,5 +364,9 @@ def set_delays():
 def get_delays():
     return jsonify({"follow_delay": current_follow_delay, "dm_delay": current_dm_delay})
 
+# -----------------------------------------------------------
+# Run with Gunicorn (production) or Flask dev server
+# -----------------------------------------------------------
 if __name__ == '__main__':
+    # For local testing only – Render will use gunicorn
     app.run(host='0.0.0.0', port=8000, debug=False)
