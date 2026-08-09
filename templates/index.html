@@ -14,11 +14,13 @@
         .status { margin-top: 1rem; background: #f8f9fa; padding: 0.5rem; border-radius: 4px; }
         .task-id { font-family: monospace; background: #e9ecef; padding: 0.2rem 0.5rem; border-radius: 3px; }
         hr { margin: 2rem 0; }
+        #userInfo { font-weight: bold; margin: 0.5rem 0; color: #28a745; }
     </style>
 </head>
 <body>
     <h1>⚡ TikTok Automation</h1>
     <div id="authStatus">Checking authentication...</div>
+    <div id="userInfo"></div>
 
     <section>
         <h2>📨 Send Single DM</h2>
@@ -88,13 +90,31 @@
             return res.json();
         }
 
-        // Auth status
+        // Auth status + user info
         fetch('/api/status')
             .then(r => r.json())
             .then(data => {
-                document.getElementById('authStatus').innerHTML = data.authenticated
-                    ? '✅ Session loaded (cookies found)'
-                    : '❌ No session – set TIKTOK_COOKIES_JSON environment variable';
+                const authDiv = document.getElementById('authStatus');
+                if (data.authenticated) {
+                    authDiv.innerHTML = '✅ Session loaded (cookies found)';
+                    // Fetch username
+                    fetch('/api/user_info')
+                        .then(res => res.json())
+                        .then(userData => {
+                            const userDiv = document.getElementById('userInfo');
+                            if (userData.success) {
+                                userDiv.innerHTML = '👤 Connected as: @' + userData.username;
+                            } else {
+                                userDiv.innerHTML = '⚠️ Could not retrieve username: ' + userData.error;
+                            }
+                        })
+                        .catch(() => {
+                            document.getElementById('userInfo').innerHTML = '⚠️ Error fetching user info';
+                        });
+                } else {
+                    authDiv.innerHTML = '❌ No session – set TIKTOK_COOKIES_JSON environment variable';
+                    document.getElementById('userInfo').innerHTML = '';
+                }
             });
 
         // Single DM
