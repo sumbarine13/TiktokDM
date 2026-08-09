@@ -1,5 +1,5 @@
 # ============================================================
-# FILE: app.py (updated with /api/user_info)
+# FILE: app.py (final – with caching & robust username)
 # ============================================================
 import json
 import asyncio
@@ -40,15 +40,24 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 # -----------------------------------------------------------
-# Delays
+# Delays (configurable)
 # -----------------------------------------------------------
 current_follow_delay = float(os.environ.get("FOLLOW_DELAY", 4.0))
 current_dm_delay = float(os.environ.get("DM_DELAY", 6.0))
 
 # -----------------------------------------------------------
-# Active tasks
+# Active background tasks
 # -----------------------------------------------------------
 active_tasks: Dict[str, Dict] = {}
+
+# -----------------------------------------------------------
+# Username cache (to avoid repeated slow calls)
+# -----------------------------------------------------------
+username_cache = {
+    "username": None,
+    "timestamp": 0
+}
+CACHE_TTL = 300  # 5 seconds (change to 300 for 5 minutes if you prefer)
 
 # -----------------------------------------------------------
 # Cookie loader
@@ -77,7 +86,6 @@ def load_cookies() -> Optional[Dict[str, Any]]:
 # Authenticated API session creator
 # -----------------------------------------------------------
 async def create_authenticated_api() -> TikTokApi:
-    """Returns an authenticated TikTokApi instance using cookies."""
     cookies = load_cookies()
     if not cookies:
         raise ValueError("No cookies found. Set TIKTOK_COOKIES_JSON or place cookies.json.")
@@ -128,16 +136,19 @@ async def send_dm(api, target_username: str, message: str):
     await api.dm().send_message(conversation_id=conversation_id, text=message)
 
 # -----------------------------------------------------------
-# NEW: Get current username
+# Get current username (with robust fallback)
 # -----------------------------------------------------------
 async def get_current_username(api) -> str:
-    """Return the username of the logged-in user."""
     try:
-        user = api.user()  # no username = logged-in user
+        user = api.user()
         info = await user.info()
-        return info.get("user", {}).get("unique_id", "Unknown")
-    except Exception:
-        return "Unknown"
+        username = info.get("user", {}).get("unique_id")
+        if username:
+            return username
+    except Exception as e:
+        print(f"Failed to get username via api.user(): {e}")
+
+    return "Unknown"
 
 # -----------------------------------------------------------
 # Background tasks
@@ -240,9 +251,13 @@ def api_status():
     cookies = load_cookies()
     return jsonify({"authenticated": cookies is not None})
 
-# NEW endpoint to get current username
 @app.route('/api/user_info')
 def api_user_info():
+    global username_cache
+    now = time.time()
+    if username_cache["username"] and (now - username_cache["timestamp"] < CACHE_TTL):
+        return jsonify({"success": True, "username": username_cache["username"]})
+
     cookies = load_cookies()
     if not cookies:
         return jsonify({"success": False, "error": "No session"}), 401
@@ -252,6 +267,8 @@ def api_user_info():
     try:
         api = loop.run_until_complete(create_authenticated_api())
         username = loop.run_until_complete(get_current_username(api))
+        username_cache["username"] = username
+        username_cache["timestamp"] = now
         return jsonify({"success": True, "username": username})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
