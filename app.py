@@ -1,5 +1,5 @@
 # ============================================================
-# FILE: app.py (fully updated – works with TikTokApi v6+)
+# FILE: app.py (updated with /api/user_info)
 # ============================================================
 import json
 import asyncio
@@ -46,7 +46,7 @@ current_follow_delay = float(os.environ.get("FOLLOW_DELAY", 4.0))
 current_dm_delay = float(os.environ.get("DM_DELAY", 6.0))
 
 # -----------------------------------------------------------
-# Tasks
+# Active tasks
 # -----------------------------------------------------------
 active_tasks: Dict[str, Dict] = {}
 
@@ -126,6 +126,18 @@ async def send_dm(api, target_username: str, message: str):
         conversation_id = created["conversation_id"]
 
     await api.dm().send_message(conversation_id=conversation_id, text=message)
+
+# -----------------------------------------------------------
+# NEW: Get current username
+# -----------------------------------------------------------
+async def get_current_username(api) -> str:
+    """Return the username of the logged-in user."""
+    try:
+        user = api.user()  # no username = logged-in user
+        info = await user.info()
+        return info.get("user", {}).get("unique_id", "Unknown")
+    except Exception:
+        return "Unknown"
 
 # -----------------------------------------------------------
 # Background tasks
@@ -217,7 +229,7 @@ async def mass_follow_and_dm(target_username: str, dm_message: str, limit: int, 
             del active_tasks[task_id]
 
 # -----------------------------------------------------------
-# Flask routes (unchanged)
+# Flask routes
 # -----------------------------------------------------------
 @app.route('/')
 def index():
@@ -227,6 +239,24 @@ def index():
 def api_status():
     cookies = load_cookies()
     return jsonify({"authenticated": cookies is not None})
+
+# NEW endpoint to get current username
+@app.route('/api/user_info')
+def api_user_info():
+    cookies = load_cookies()
+    if not cookies:
+        return jsonify({"success": False, "error": "No session"}), 401
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        api = loop.run_until_complete(create_authenticated_api())
+        username = loop.run_until_complete(get_current_username(api))
+        return jsonify({"success": True, "username": username})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        loop.close()
 
 @app.route('/api/send', methods=['POST'])
 def api_send():
