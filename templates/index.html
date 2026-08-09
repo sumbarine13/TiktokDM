@@ -15,6 +15,7 @@
         .task-id { font-family: monospace; background: #e9ecef; padding: 0.2rem 0.5rem; border-radius: 3px; }
         hr { margin: 2rem 0; }
         #userInfo { font-weight: bold; margin: 0.5rem 0; color: #28a745; }
+        .error-info { color: #dc3545; }
     </style>
 </head>
 <body>
@@ -82,7 +83,6 @@
     </section>
 
     <script>
-        // Helper: fetch JSON and handle errors
         async function apiCall(url, method='GET', body=null) {
             const opts = { method, headers: { 'Content-Type': 'application/json' } };
             if (body) opts.body = JSON.stringify(body);
@@ -90,14 +90,13 @@
             return res.json();
         }
 
-        // Auth status + user info
+        // Auth + user info
         fetch('/api/status')
             .then(r => r.json())
             .then(data => {
                 const authDiv = document.getElementById('authStatus');
                 if (data.authenticated) {
                     authDiv.innerHTML = '✅ Session loaded (cookies found)';
-                    // Fetch username
                     fetch('/api/user_info')
                         .then(res => res.json())
                         .then(userData => {
@@ -105,11 +104,13 @@
                             if (userData.success) {
                                 userDiv.innerHTML = '👤 Connected as: @' + userData.username;
                             } else {
-                                userDiv.innerHTML = '⚠️ Could not retrieve username: ' + userData.error;
+                                userDiv.innerHTML = '⚠️ Could not retrieve username (cookies may be expired)';
+                                userDiv.className = 'error-info';
                             }
                         })
                         .catch(() => {
                             document.getElementById('userInfo').innerHTML = '⚠️ Error fetching user info';
+                            document.getElementById('userInfo').className = 'error-info';
                         });
                 } else {
                     authDiv.innerHTML = '❌ No session – set TIKTOK_COOKIES_JSON environment variable';
